@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import '../models/card_model.dart';
+import '../models/payment_method_model.dart';
 import 'products_screen.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
   final double totalPaid;
-  final CardModel card;
+  final PaymentMethodModel method;
 
   const PaymentSuccessScreen({
     super.key,
     required this.totalPaid,
-    required this.card,
+    required this.method,
   });
 
   @override
@@ -18,27 +18,45 @@ class PaymentSuccessScreen extends StatefulWidget {
 
 class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController _ctrl;
   late Animation<double> _scaleAnim;
   late Animation<double> _fadeAnim;
 
   static const Color kPrimary = Color(0xFF5667F6);
   static const Color kText = Color(0xFF1B1E3D);
+  static const Color kSubtext = Color(0xFF8A8FAE);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
-    _scaleAnim = CurvedAnimation(parent: _controller, curve: Curves.elasticOut);
-    _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _controller.forward();
+    _scaleAnim = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
+    _ctrl.forward();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ctrl.dispose();
     super.dispose();
+  }
+
+  String get _methodSummary {
+    switch (widget.method.type) {
+      case PaymentType.credit:
+        final last4 = widget.method.cardNumber != null &&
+            widget.method.cardNumber!.length >= 4
+            ? widget.method.cardNumber!
+            .replaceAll(' ', '')
+            .substring(widget.method.cardNumber!.replaceAll(' ', '').length - 4)
+            : '????';
+        return '••••  ••••  ••••  $last4';
+      case PaymentType.paypal:
+        return widget.method.paypalEmail ?? 'PayPal';
+      case PaymentType.wallet:
+        return widget.method.walletPhone ?? 'Wallet';
+    }
   }
 
   @override
@@ -52,32 +70,27 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-              // Animated checkmark
               ScaleTransition(
                 scale: _scaleAnim,
                 child: Container(
                   width: 110,
                   height: 110,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [kPrimary, const Color(0xFF7B89F9)],
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5667F6), Color(0xFF7B89F9)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: kPrimary.withOpacity(0.4),
-                        blurRadius: 30,
-                        offset: const Offset(0, 10),
-                      )
+                          color: kPrimary.withOpacity(0.4),
+                          blurRadius: 30,
+                          offset: const Offset(0, 10))
                     ],
                   ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Colors.white,
-                    size: 56,
-                  ),
+                  child: const Icon(Icons.check_rounded,
+                      color: Colors.white, size: 56),
                 ),
               ),
               const SizedBox(height: 32),
@@ -85,24 +98,17 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 opacity: _fadeAnim,
                 child: Column(
                   children: [
-                    const Text(
-                      '¡Pago exitoso!',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: kText,
-                      ),
-                    ),
+                    const Text('¡Pago exitoso!',
+                        style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: kText)),
                     const SizedBox(height: 10),
                     Text(
-                      'Tu pago de \$${widget.totalPaid.toStringAsFixed(2)} fue procesado correctamente.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: Color(0xFF8A8FAE),
-                        height: 1.5,
-                      ),
-                    ),
+                        'Tu pago de \$${widget.totalPaid.toStringAsFixed(2)} fue procesado correctamente.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 15, color: kSubtext, height: 1.5)),
                     const SizedBox(height: 30),
                     Container(
                       padding: const EdgeInsets.all(20),
@@ -111,24 +117,20 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          )
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4))
                         ],
                       ),
                       child: Column(
                         children: [
-                          _infoRow('Método', widget.card.paymentMethod),
+                          _row('Método', widget.method.type.label),
                           const Divider(height: 20),
-                          _infoRow('Tarjeta',
-                              '••••  ••••  ••••  ${widget.card.lastFour}'),
+                          _row('Cuenta', _methodSummary),
                           const Divider(height: 20),
-                          _infoRow('Titular', widget.card.cardHolder),
-                          const Divider(height: 20),
-                          _infoRow('Total',
+                          _row('Total',
                               '\$${widget.totalPaid.toStringAsFixed(2)}',
-                              isHighlight: true),
+                              highlight: true),
                         ],
                       ),
                     ),
@@ -146,27 +148,22 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [kPrimary, const Color(0xFF7B89F9)],
-                    ),
+                    gradient: const LinearGradient(
+                        colors: [Color(0xFF5667F6), Color(0xFF7B89F9)]),
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: kPrimary.withOpacity(0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      )
+                          color: kPrimary.withOpacity(0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8))
                     ],
                   ),
                   child: const Center(
-                    child: Text(
-                      'Volver a la tienda',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
+                    child: Text('Volver a la tienda',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16)),
                   ),
                 ),
               ),
@@ -178,21 +175,17 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _infoRow(String label, String value, {bool isHighlight = false}) {
+  Widget _row(String label, String value, {bool highlight = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label,
-            style: const TextStyle(color: Color(0xFF8A8FAE), fontSize: 13)),
-        Text(
-          value,
-          style: TextStyle(
-            color: isHighlight ? kPrimary : kText,
-            fontWeight:
-            isHighlight ? FontWeight.w800 : FontWeight.w600,
-            fontSize: isHighlight ? 16 : 13,
-          ),
-        ),
+            style: const TextStyle(color: kSubtext, fontSize: 13)),
+        Text(value,
+            style: TextStyle(
+                color: highlight ? kPrimary : kText,
+                fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
+                fontSize: highlight ? 16 : 13)),
       ],
     );
   }

@@ -25,13 +25,8 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFEEF1FB),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF5667F6),
-          brightness: Brightness.light,
         ),
         useMaterial3: true,
-        fontFamily: 'Roboto',
-        inputDecorationTheme: const InputDecorationTheme(
-          border: InputBorder.none,
-        ),
       ),
       home: const ProductsScreen(),
     );
