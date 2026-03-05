@@ -15,86 +15,87 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'payment_app_v2.db');
+    // v3: sin UNIQUE en type → múltiples métodos por tipo
+    final path = join(dbPath, 'payment_app_v3.db');
     return await openDatabase(path, version: 1, onCreate: _onCreate);
   }
 
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE payment_methods (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL UNIQUE,
-        cardNumber TEXT,
-        expiryMonth TEXT,
-        expiryYear TEXT,
-        cvv TEXT,
-        cardHolder TEXT,
-        paypalEmail TEXT,
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        type    TEXT    NOT NULL,
+        nickname TEXT,
+        cardNumber    TEXT,
+        expiryMonth   TEXT,
+        expiryYear    TEXT,
+        cvv           TEXT,
+        cardHolder    TEXT,
+        paypalEmail   TEXT,
         paypalPassword TEXT,
-        walletPhone TEXT,
-        walletPin TEXT,
+        walletPhone   TEXT,
+        walletPin     TEXT,
         savedAt TEXT NOT NULL
       )
     ''');
   }
 
-  // ─── SAVE / UPDATE ───────────────────────────────────────────────
+  // ─── INSERT ──────────────────────────────────────────────────────
 
-  /// Guarda o actualiza el método para ese tipo (upsert por type)
-  Future<void> upsertMethod(PaymentMethodModel method) async {
+  /// Inserta un nuevo método (siempre crea un registro nuevo)
+  Future<int> insertMethod(PaymentMethodModel method) async {
     final db = await database;
-    final map = method.toMap()..['savedAt'] = DateTime.now().toIso8601String();
-    map.remove('id');
+    final map = method.toMap()
+      ..remove('id')
+      ..['savedAt'] = DateTime.now().toIso8601String();
+    return await db.insert('payment_methods', map);
+  }
 
-    final existing = await db.query('payment_methods',
-        where: 'type = ?', whereArgs: [method.type.key]);
-
-    if (existing.isEmpty) {
-      await db.insert('payment_methods', map);
-    } else {
-      await db.update('payment_methods', map,
-          where: 'type = ?', whereArgs: [method.type.key]);
-    }
+  /// Actualiza un método existente por id
+  Future<void> updateMethod(PaymentMethodModel method) async {
+    assert(method.id != null, 'updateMethod requiere id');
+    final db = await database;
+    final map = method.toMap()
+      ..['savedAt'] = DateTime.now().toIso8601String();
+    await db.update('payment_methods', map,
+        where: 'id = ?', whereArgs: [method.id]);
   }
 
   // ─── READ ─────────────────────────────────────────────────────────
 
-  /// Trae el método guardado para un tipo específico (null si no existe)
-  Future<PaymentMethodModel?> getMethodByType(PaymentType type) async {
+  /// Todos los métodos guardados de un tipo (más reciente primero)
+  Future<List<PaymentMethodModel>> getMethodsByType(PaymentType type) async {
     final db = await database;
     final rows = await db.query('payment_methods',
-        where: 'type = ?', whereArgs: [type.key]);
-    if (rows.isEmpty) return null;
-    return PaymentMethodModel.fromMap(rows.first);
+        where: 'type = ?', whereArgs: [type.key], orderBy: 'savedAt DESC');
+    return rows.map(PaymentMethodModel.fromMap).toList();
   }
 
-  /// Trae todos los métodos guardados
+  /// Todos los métodos guardados sin filtro
   Future<List<PaymentMethodModel>> getAllMethods() async {
     final db = await database;
     final rows =
     await db.query('payment_methods', orderBy: 'savedAt DESC');
-    return rows.map((r) => PaymentMethodModel.fromMap(r)).toList();
+    return rows.map(PaymentMethodModel.fromMap).toList();
   }
 
-  /// ¿Existe un método guardado para este tipo?
-  Future<bool> hasMethod(PaymentType type) async {
+  /// Total de métodos guardados
+  Future<int> countAll() async {
     final db = await database;
-    final count = Sqflite.firstIntValue(await db.rawQuery(
-        'SELECT COUNT(*) FROM payment_methods WHERE type = ?',
-        [type.key]));
-    return (count ?? 0) > 0;
+    final v = Sqflite.firstIntValue(
+        await db.rawQuery('SELECT COUNT(*) FROM payment_methods'));
+    return v ?? 0;
   }
 
   // ─── DELETE ──────────────────────────────────────────────────────
 
-  /// Elimina el método de un tipo
-  Future<void> deleteMethod(PaymentType type) async {
+  /// Elimina un método por su id
+  Future<void> deleteById(int id) async {
     final db = await database;
-    await db.delete('payment_methods',
-        where: 'type = ?', whereArgs: [type.key]);
+    await db.delete('payment_methods', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Elimina todos los métodos guardados
+  /// Elimina todos
   Future<void> deleteAllMethods() async {
     final db = await database;
     await db.delete('payment_methods');
@@ -102,10 +103,9 @@ class DatabaseHelper {
 
   // ─── DEBUG ───────────────────────────────────────────────────────
 
-  /// Devuelve un mapa raw de todos los registros (para debug)
   Future<List<Map<String, dynamic>>> getRawRows() async {
     final db = await database;
     return await db.rawQuery(
-        'SELECT id, type, savedAt FROM payment_methods ORDER BY savedAt DESC');
+        'SELECT id, type, nickname, savedAt FROM payment_methods ORDER BY savedAt DESC');
   }
 }

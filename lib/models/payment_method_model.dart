@@ -49,6 +49,7 @@ extension PaymentTypeExt on PaymentType {
 class PaymentMethodModel {
   final int? id;
   final PaymentType type;
+  final String? nickname; // Nombre personalizado: "Mi Visa", "PayPal personal", etc.
 
   // Credit card fields
   final String? cardNumber;
@@ -68,6 +69,7 @@ class PaymentMethodModel {
   const PaymentMethodModel({
     this.id,
     required this.type,
+    this.nickname,
     this.cardNumber,
     this.expiryMonth,
     this.expiryYear,
@@ -83,6 +85,7 @@ class PaymentMethodModel {
     return {
       'id': id,
       'type': type.key,
+      'nickname': nickname,
       'cardNumber': cardNumber,
       'expiryMonth': expiryMonth,
       'expiryYear': expiryYear,
@@ -99,6 +102,7 @@ class PaymentMethodModel {
     return PaymentMethodModel(
       id: map['id'],
       type: PaymentTypeExt.fromKey(map['type'] ?? 'Credit'),
+      nickname: map['nickname'],
       cardNumber: map['cardNumber'],
       expiryMonth: map['expiryMonth'],
       expiryYear: map['expiryYear'],
@@ -114,6 +118,7 @@ class PaymentMethodModel {
   PaymentMethodModel copyWith({
     int? id,
     PaymentType? type,
+    String? nickname,
     String? cardNumber,
     String? expiryMonth,
     String? expiryYear,
@@ -127,6 +132,7 @@ class PaymentMethodModel {
     return PaymentMethodModel(
       id: id ?? this.id,
       type: type ?? this.type,
+      nickname: nickname ?? this.nickname,
       cardNumber: cardNumber ?? this.cardNumber,
       expiryMonth: expiryMonth ?? this.expiryMonth,
       expiryYear: expiryYear ?? this.expiryYear,
@@ -139,29 +145,31 @@ class PaymentMethodModel {
     );
   }
 
+  /// Nombre que se muestra en la lista de métodos guardados
   String get displayTitle {
+    if (nickname != null && nickname!.isNotEmpty) return nickname!;
     switch (type) {
       case PaymentType.credit:
-        final last4 = cardNumber != null && cardNumber!.length >= 4
-            ? cardNumber!.replaceAll(' ', '').substring(
-            cardNumber!.replaceAll(' ', '').length - 4)
-            : '????';
+        final raw = cardNumber?.replaceAll(' ', '') ?? '';
+        final last4 = raw.length >= 4 ? raw.substring(raw.length - 4) : '????';
         return 'Tarjeta ••••$last4';
       case PaymentType.paypal:
         return paypalEmail ?? 'PayPal';
       case PaymentType.wallet:
-        return walletPhone != null ? 'Wallet · ${walletPhone}' : 'Wallet';
+        return walletPhone != null ? 'Wallet · $walletPhone' : 'Wallet';
     }
   }
 
   String get displaySubtitle {
     switch (type) {
       case PaymentType.credit:
-        return cardHolder ?? '';
+        final raw = cardNumber?.replaceAll(' ', '') ?? '';
+        final last4 = raw.length >= 4 ? raw.substring(raw.length - 4) : '????';
+        return '${cardHolder ?? ''} · ••••$last4';
       case PaymentType.paypal:
-        return 'Cuenta PayPal';
+        return paypalEmail ?? 'Cuenta PayPal';
       case PaymentType.wallet:
-        return 'Monedero digital';
+        return 'Teléfono ${walletPhone ?? ''}';
     }
   }
 }

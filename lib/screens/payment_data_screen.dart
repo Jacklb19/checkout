@@ -22,30 +22,27 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
   static const Color kSubtext = Color(0xFF8A8FAE);
 
   PaymentType _selectedType = PaymentType.credit;
-  bool _saveMethod = true;
-  bool _useSaved = false;
-  bool _isLoading = true;
-
-  PaymentMethodModel? _savedMethod;
-
   late TabController _tabController;
   final _formKey = GlobalKey<FormState>();
 
-  // ── Credit fields ──
+  // ── Saved methods for current tab ──
+  List<PaymentMethodModel> _savedMethods = [];
+  PaymentMethodModel? _selectedSaved; // null = "nuevo"
+  bool _isLoading = true;
+  bool _saveMethod = true;
+
+  // ── Form controllers ──
+  final _nicknameCtrl   = TextEditingController();
   final _cardNumberCtrl = TextEditingController();
-  final _monthCtrl = TextEditingController();
-  final _yearCtrl = TextEditingController();
-  final _cvvCtrl = TextEditingController();
-  final _holderCtrl = TextEditingController();
-
-  // ── PayPal fields ──
-  final _ppEmailCtrl = TextEditingController();
+  final _monthCtrl      = TextEditingController();
+  final _yearCtrl       = TextEditingController();
+  final _cvvCtrl        = TextEditingController();
+  final _holderCtrl     = TextEditingController();
+  final _ppEmailCtrl    = TextEditingController();
   final _ppPasswordCtrl = TextEditingController();
-  bool _ppShowPass = false;
-
-  // ── Wallet fields ──
   final _walletPhoneCtrl = TextEditingController();
-  final _walletPinCtrl = TextEditingController();
+  final _walletPinCtrl  = TextEditingController();
+  bool _ppShowPass = false;
   bool _walletShowPin = false;
 
   @override
@@ -55,29 +52,26 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         final types = [PaymentType.credit, PaymentType.paypal, PaymentType.wallet];
-        setState(() {
-          _selectedType = types[_tabController.index];
-          _useSaved = false;
-        });
-        _loadSavedForType(types[_tabController.index]);
+        setState(() => _selectedType = types[_tabController.index]);
+        _loadSavedMethods(types[_tabController.index]);
       }
     });
-    _loadSavedForType(PaymentType.credit);
+    _loadSavedMethods(PaymentType.credit);
   }
 
-  Future<void> _loadSavedForType(PaymentType type) async {
-    setState(() => _isLoading = true);
-    final saved = await DatabaseHelper.instance.getMethodByType(type);
+  Future<void> _loadSavedMethods(PaymentType type) async {
+    setState(() { _isLoading = true; _selectedSaved = null; });
+    final list = await DatabaseHelper.instance.getMethodsByType(type);
     if (!mounted) return;
     setState(() {
-      _savedMethod = saved;
-      _useSaved = false;
+      _savedMethods = list;
       _isLoading = false;
     });
-    _clearFields();
+    _clearForm();
   }
 
-  void _clearFields() {
+  void _clearForm() {
+    _nicknameCtrl.clear();
     _cardNumberCtrl.clear();
     _monthCtrl.clear();
     _yearCtrl.clear();
@@ -89,60 +83,63 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     _walletPinCtrl.clear();
   }
 
-  void _fillFromSaved() {
-    if (_savedMethod == null) return;
-    switch (_savedMethod!.type) {
+  void _selectSaved(PaymentMethodModel? method) {
+    setState(() => _selectedSaved = method);
+    if (method == null) {
+      _clearForm();
+      return;
+    }
+    _nicknameCtrl.text = method.nickname ?? '';
+    switch (method.type) {
       case PaymentType.credit:
-        _cardNumberCtrl.text = _formatCardNumber(_savedMethod!.cardNumber ?? '');
-        _monthCtrl.text = _savedMethod!.expiryMonth ?? '';
-        _yearCtrl.text = _savedMethod!.expiryYear ?? '';
-        _cvvCtrl.text = _savedMethod!.cvv ?? '';
-        _holderCtrl.text = _savedMethod!.cardHolder ?? '';
+        _cardNumberCtrl.text = _fmtCard(method.cardNumber ?? '');
+        _monthCtrl.text = method.expiryMonth ?? '';
+        _yearCtrl.text = method.expiryYear ?? '';
+        _cvvCtrl.text = method.cvv ?? '';
+        _holderCtrl.text = method.cardHolder ?? '';
         break;
       case PaymentType.paypal:
-        _ppEmailCtrl.text = _savedMethod!.paypalEmail ?? '';
-        _ppPasswordCtrl.text = _savedMethod!.paypalPassword ?? '';
+        _ppEmailCtrl.text = method.paypalEmail ?? '';
+        _ppPasswordCtrl.text = method.paypalPassword ?? '';
         break;
       case PaymentType.wallet:
-        _walletPhoneCtrl.text = _savedMethod!.walletPhone ?? '';
-        _walletPinCtrl.text = _savedMethod!.walletPin ?? '';
+        _walletPhoneCtrl.text = method.walletPhone ?? '';
+        _walletPinCtrl.text = method.walletPin ?? '';
         break;
     }
   }
 
-  String _formatCardNumber(String value) {
-    value = value.replaceAll(' ', '');
-    final buffer = StringBuffer();
-    for (int i = 0; i < value.length; i++) {
-      if (i > 0 && i % 4 == 0) buffer.write(' ');
-      buffer.write(value[i]);
+  String _fmtCard(String v) {
+    v = v.replaceAll(' ', '');
+    final buf = StringBuffer();
+    for (int i = 0; i < v.length; i++) {
+      if (i > 0 && i % 4 == 0) buf.write(' ');
+      buf.write(v[i]);
     }
-    return buffer.toString();
+    return buf.toString();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _cardNumberCtrl.dispose();
-    _monthCtrl.dispose();
-    _yearCtrl.dispose();
-    _cvvCtrl.dispose();
-    _holderCtrl.dispose();
-    _ppEmailCtrl.dispose();
-    _ppPasswordCtrl.dispose();
-    _walletPhoneCtrl.dispose();
-    _walletPinCtrl.dispose();
+    for (final c in [_nicknameCtrl, _cardNumberCtrl, _monthCtrl, _yearCtrl,
+      _cvvCtrl, _holderCtrl, _ppEmailCtrl, _ppPasswordCtrl,
+      _walletPhoneCtrl, _walletPinCtrl]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _proceed() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final PaymentMethodModel method;
+    PaymentMethodModel method;
     switch (_selectedType) {
       case PaymentType.credit:
         method = PaymentMethodModel(
+          id: _selectedSaved?.id,
           type: PaymentType.credit,
+          nickname: _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
           cardNumber: _cardNumberCtrl.text.replaceAll(' ', ''),
           expiryMonth: _monthCtrl.text,
           expiryYear: _yearCtrl.text,
@@ -152,14 +149,18 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
         break;
       case PaymentType.paypal:
         method = PaymentMethodModel(
+          id: _selectedSaved?.id,
           type: PaymentType.paypal,
+          nickname: _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
           paypalEmail: _ppEmailCtrl.text.trim(),
           paypalPassword: _ppPasswordCtrl.text,
         );
         break;
       case PaymentType.wallet:
         method = PaymentMethodModel(
+          id: _selectedSaved?.id,
           type: PaymentType.wallet,
+          nickname: _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
           walletPhone: _walletPhoneCtrl.text.trim(),
           walletPin: _walletPinCtrl.text,
         );
@@ -167,7 +168,14 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     }
 
     if (_saveMethod) {
-      await DatabaseHelper.instance.upsertMethod(method);
+      if (_selectedSaved != null) {
+        // actualizar existente
+        await DatabaseHelper.instance.updateMethod(method);
+      } else {
+        // insertar nuevo
+        final newId = await DatabaseHelper.instance.insertMethod(method);
+        method = method.copyWith(id: newId);
+      }
     }
 
     if (!mounted) return;
@@ -190,11 +198,10 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
       body: SafeArea(
         child: Column(
           children: [
-            _buildTopBar(),
-            _buildTotalPrice(),
-            const SizedBox(height: 20),
-            _buildTabBar(),
-            const SizedBox(height: 4),
+            _topBar(),
+            _totalBanner(),
+            const SizedBox(height: 16),
+            _tabBar(),
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -204,13 +211,13 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
                   padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                   child: Column(
                     children: [
-                      if (_savedMethod != null) _buildSavedBanner(),
+                      _savedMethodsSelector(),
                       const SizedBox(height: 16),
-                      _buildFormForType(),
+                      _formBody(),
                       const SizedBox(height: 16),
-                      _buildSaveToggle(),
+                      _saveToggle(),
                       const SizedBox(height: 24),
-                      _buildProceedButton(),
+                      _proceedBtn(),
                     ],
                   ),
                 ),
@@ -222,27 +229,14 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _buildTopBar() {
+  // ── Top bar ───────────────────────────────────────────────────────────────
+
+  Widget _topBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.06),
-                      blurRadius: 8, offset: const Offset(0, 2))
-                ],
-              ),
-              child: const Icon(Icons.arrow_back_ios_new, size: 16),
-            ),
-          ),
+          _backBtn(() => Navigator.pop(context)),
           const Expanded(
             child: Center(
               child: Text('Datos de pago',
@@ -255,9 +249,9 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _buildTotalPrice() {
+  Widget _totalBanner() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -268,7 +262,7 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
                   style: TextStyle(fontSize: 13, color: kSubtext)),
               Text('\$${widget.totalPrice.toStringAsFixed(2)}',
                   style: TextStyle(
-                      fontSize: 34, fontWeight: FontWeight.w800, color: kPrimary)),
+                      fontSize: 32, fontWeight: FontWeight.w800, color: kPrimary)),
             ],
           ),
         ],
@@ -276,33 +270,29 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _tabBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
       height: 50,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05),
-              blurRadius: 8, offset: const Offset(0, 2))
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
+            blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: TabBar(
         controller: _tabController,
         indicator: BoxDecoration(
           color: kPrimary,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(color: kPrimary.withOpacity(0.3),
-                blurRadius: 8, offset: const Offset(0, 3))
-          ],
+          boxShadow: [BoxShadow(color: kPrimary.withOpacity(0.3),
+              blurRadius: 8, offset: const Offset(0, 3))],
         ),
         indicatorSize: TabBarIndicatorSize.tab,
         labelColor: Colors.white,
         unselectedLabelColor: kSubtext,
-        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
         padding: const EdgeInsets.all(5),
         dividerColor: Colors.transparent,
         tabs: const [
@@ -314,110 +304,212 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _buildSavedBanner() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: _useSaved
-            ? kPrimary.withOpacity(0.08)
-            : Colors.amber.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _useSaved ? kPrimary.withOpacity(0.3) : Colors.amber.shade300,
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _useSaved ? Icons.check_circle : Icons.bookmark_outlined,
-            color: _useSaved ? kPrimary : Colors.amber.shade700,
-            size: 20,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _useSaved ? 'Usando datos guardados' : 'Tienes datos guardados',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: _useSaved ? kPrimary : Colors.amber.shade800,
-                  ),
-                ),
-                Text(
-                  _savedMethod!.displayTitle,
-                  style: TextStyle(fontSize: 11, color: kSubtext),
-                ),
-              ],
+  // ── Saved methods selector ────────────────────────────────────────────────
+
+  Widget _savedMethodsSelector() {
+    if (_savedMethods.isEmpty) {
+      return _infoChip(
+        icon: Icons.add_circle_outline,
+        text: 'No hay métodos guardados para este tipo. Completa el formulario.',
+        color: kSubtext,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Métodos guardados',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kText)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                  color: kPrimary, borderRadius: BorderRadius.circular(10)),
+              child: Text('${_savedMethods.length}',
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
-          ),
-          Switch(
-            value: _useSaved,
-            activeColor: kPrimary,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            onChanged: (v) {
-              setState(() => _useSaved = v);
-              if (v) {
-                _fillFromSaved();
-              } else {
-                _clearFields();
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Horizontal scrollable cards
+        SizedBox(
+          height: 82,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _savedMethods.length + 1, // +1 for "nuevo"
+            itemBuilder: (_, i) {
+              if (i == _savedMethods.length) {
+                // "Nuevo" card
+                return _savedMethodChip(null);
               }
+              return _savedMethodChip(_savedMethods[i]);
             },
           ),
-        ],
+        ),
+        const SizedBox(height: 6),
+        if (_selectedSaved != null)
+          _infoChip(
+            icon: Icons.edit_outlined,
+            text: 'Editando "${_selectedSaved!.displayTitle}". Los cambios se guardarán sobre este método.',
+            color: kPrimary,
+          )
+        else
+          _infoChip(
+            icon: Icons.add,
+            text: 'Añadiendo nuevo método. Se guardará como una entrada adicional.',
+            color: const Color(0xFF10B981),
+          ),
+      ],
+    );
+  }
+
+  Widget _savedMethodChip(PaymentMethodModel? method) {
+    final isSelected = method == null
+        ? _selectedSaved == null
+        : _selectedSaved?.id == method.id;
+
+    return GestureDetector(
+      onTap: () => _selectSaved(method),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.only(right: 10),
+        width: 140,
+        decoration: BoxDecoration(
+          color: isSelected ? kPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? kPrimary : Colors.grey.shade200,
+            width: 1.5,
+          ),
+          boxShadow: isSelected
+              ? [BoxShadow(color: kPrimary.withOpacity(0.3),
+              blurRadius: 12, offset: const Offset(0, 4))]
+              : [],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: method == null
+              ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_circle_outline,
+                  color: isSelected ? Colors.white : kPrimary, size: 20),
+              const SizedBox(height: 4),
+              Text('Nuevo',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : kText)),
+            ],
+          )
+              : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Text(method.type.icon,
+                      style: const TextStyle(fontSize: 16)),
+                  const Spacer(),
+                  if (isSelected)
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check,
+                          color: Colors.white, size: 10),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(method.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : kText)),
+              Text(
+                  method.type == PaymentType.credit
+                      ? '${method.expiryMonth}/${method.expiryYear}'
+                      : method.type == PaymentType.paypal
+                      ? (method.paypalEmail ?? '').split('@').first
+                      : (method.walletPhone ?? ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: isSelected
+                          ? Colors.white.withOpacity(0.7)
+                          : kSubtext)),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildFormForType() {
-    switch (_selectedType) {
-      case PaymentType.credit:
-        return _buildCreditForm();
-      case PaymentType.paypal:
-        return _buildPayPalForm();
-      case PaymentType.wallet:
-        return _buildWalletForm();
-    }
+  // ── Form body (delegates to each type) ───────────────────────────────────
+
+  Widget _formBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Nickname field (shared)
+        _label('Alias (opcional)'),
+        const SizedBox(height: 8),
+        _box(
+          TextFormField(
+            controller: _nicknameCtrl,
+            decoration: _dec('ej. "Mi Visa principal"',
+                prefix: Icon(Icons.label_outline, color: kSubtext, size: 18)),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Type-specific fields
+        if (_selectedType == PaymentType.credit) _creditFields(),
+        if (_selectedType == PaymentType.paypal) _paypalFields(),
+        if (_selectedType == PaymentType.wallet) _walletFields(),
+      ],
+    );
   }
 
-  // ── CREDIT FORM ──────────────────────────────────────────────────────────
+  // ── Credit fields ─────────────────────────────────────────────────────────
 
-  Widget _buildCreditForm() {
+  Widget _creditFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label('Número de tarjeta'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: Row(
-            children: [
-              _mastercardLogo(),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _cardNumberCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(16),
-                    _CardNumberFormatter(),
-                  ],
-                  decoration: _dec('**** **** **** ****'),
-                  validator: (v) {
-                    if (v == null || v.replaceAll(' ', '').length < 16) {
-                      return 'Número inválido (16 dígitos)';
-                    }
-                    return null;
-                  },
-                ),
+        _box(Row(
+          children: [
+            _mastercardLogo(),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _cardNumberCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(16),
+                  _CardFmt(),
+                ],
+                decoration: _dec('**** **** **** ****'),
+                validator: (v) => (v ?? '').replaceAll(' ', '').length < 16
+                    ? 'Necesita 16 dígitos'
+                    : null,
               ),
-            ],
-          ),
-        ),
+            ),
+          ],
+        )),
         const SizedBox(height: 14),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -431,41 +523,29 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
                   Row(
                     children: [
                       Expanded(
-                        child: _inputBox(
-                          child: TextFormField(
-                            controller: _monthCtrl,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(2),
-                            ],
-                            decoration: _dec('MM'),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Req.';
-                              final m = int.tryParse(v);
-                              if (m == null || m < 1 || m > 12) return 'Inválido';
-                              return null;
-                            },
-                          ),
-                        ),
+                        child: _box(TextFormField(
+                          controller: _monthCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(2)],
+                          decoration: _dec('MM'),
+                          validator: (v) {
+                            if ((v ?? '').isEmpty) return 'Req.';
+                            final m = int.tryParse(v!);
+                            return (m == null || m < 1 || m > 12) ? 'Inv.' : null;
+                          },
+                        )),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: _inputBox(
-                          child: TextFormField(
-                            controller: _yearCtrl,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(2),
-                            ],
-                            decoration: _dec('YY'),
-                            validator: (v) {
-                              if (v == null || v.length < 2) return 'Req.';
-                              return null;
-                            },
-                          ),
-                        ),
+                        child: _box(TextFormField(
+                          controller: _yearCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(2)],
+                          decoration: _dec('YY'),
+                          validator: (v) => (v ?? '').length < 2 ? 'Req.' : null,
+                        )),
                       ),
                     ],
                   ),
@@ -480,139 +560,101 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
                 children: [
                   _label('CVV'),
                   const SizedBox(height: 8),
-                  _inputBox(
-                    child: TextFormField(
-                      controller: _cvvCtrl,
-                      keyboardType: TextInputType.number,
-                      obscureText: true,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(4),
-                      ],
-                      decoration: _dec('•••'),
-                      validator: (v) {
-                        if (v == null || v.length < 3) return 'Inválido';
-                        return null;
-                      },
-                    ),
-                  ),
+                  _box(TextFormField(
+                    controller: _cvvCtrl,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(4)],
+                    decoration: _dec('•••'),
+                    validator: (v) => (v ?? '').length < 3 ? 'Inv.' : null,
+                  )),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        _label('Titular de la tarjeta'),
+        _label('Titular'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: TextFormField(
-            controller: _holderCtrl,
-            textCapitalization: TextCapitalization.words,
-            decoration: _dec('Nombre completo'),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Requerido';
-              return null;
-            },
-          ),
-        ),
+        _box(TextFormField(
+          controller: _holderCtrl,
+          textCapitalization: TextCapitalization.words,
+          decoration: _dec('Nombre completo'),
+          validator: (v) => (v ?? '').trim().isEmpty ? 'Requerido' : null,
+        )),
       ],
     );
   }
 
-  // ── PAYPAL FORM ──────────────────────────────────────────────────────────
+  // ── PayPal fields ─────────────────────────────────────────────────────────
 
-  Widget _buildPayPalForm() {
+  Widget _paypalFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildPayPalHeader(),
-        const SizedBox(height: 20),
+        _ppHeader(),
+        const SizedBox(height: 16),
         _label('Correo electrónico'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: TextFormField(
-            controller: _ppEmailCtrl,
-            keyboardType: TextInputType.emailAddress,
-            decoration: _dec('correo@ejemplo.com',
-                prefix: const Icon(Icons.email_outlined,
-                    color: Color(0xFF0070BA), size: 20)),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Requerido';
-              if (!v.contains('@') || !v.contains('.')) return 'Email inválido';
-              return null;
-            },
-          ),
-        ),
+        _box(TextFormField(
+          controller: _ppEmailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: _dec('correo@ejemplo.com',
+              prefix: const Icon(Icons.email_outlined,
+                  color: Color(0xFF0070BA), size: 18)),
+          validator: (v) {
+            if ((v ?? '').trim().isEmpty) return 'Requerido';
+            if (!v!.contains('@')) return 'Email inválido';
+            return null;
+          },
+        )),
         const SizedBox(height: 14),
-        _label('Contraseña de PayPal'),
+        _label('Contraseña'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: TextFormField(
-            controller: _ppPasswordCtrl,
-            obscureText: !_ppShowPass,
-            decoration: _dec('••••••••',
-                prefix: const Icon(Icons.lock_outline,
-                    color: Color(0xFF0070BA), size: 20),
-                suffix: IconButton(
-                  icon: Icon(
-                    _ppShowPass ? Icons.visibility_off : Icons.visibility,
-                    size: 18,
-                    color: const Color(0xFF8A8FAE),
-                  ),
-                  onPressed: () => setState(() => _ppShowPass = !_ppShowPass),
-                )),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Requerido';
-              if (v.length < 6) return 'Mínimo 6 caracteres';
-              return null;
-            },
-          ),
-        ),
-        const SizedBox(height: 14),
-        _buildInfoChip(
-          icon: Icons.security,
-          text: 'Tus credenciales están protegidas con encriptación SSL',
-          color: const Color(0xFF0070BA),
-        ),
+        _box(TextFormField(
+          controller: _ppPasswordCtrl,
+          obscureText: !_ppShowPass,
+          decoration: _dec('••••••••',
+              prefix: const Icon(Icons.lock_outline,
+                  color: Color(0xFF0070BA), size: 18),
+              suffix: IconButton(
+                icon: Icon(_ppShowPass ? Icons.visibility_off : Icons.visibility,
+                    size: 18, color: kSubtext),
+                onPressed: () => setState(() => _ppShowPass = !_ppShowPass),
+              )),
+          validator: (v) => (v ?? '').length < 6 ? 'Mínimo 6 chars' : null,
+        )),
       ],
     );
   }
 
-  Widget _buildPayPalHeader() {
+  Widget _ppHeader() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0070BA), Color(0xFF003087)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
+            colors: [Color(0xFF0070BA), Color(0xFF003087)]),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Center(
-              child: Text('🅿️', style: TextStyle(fontSize: 24)),
-            ),
+                color: Colors.white, borderRadius: BorderRadius.circular(9)),
+            child: const Center(child: Text('🅿️', style: TextStyle(fontSize: 20))),
           ),
-          const SizedBox(width: 14),
-          Column(
+          const SizedBox(width: 12),
+          const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text('PayPal',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18)),
+                      color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
               Text('Pago rápido y seguro',
-                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  style: TextStyle(color: Colors.white70, fontSize: 11)),
             ],
           ),
         ],
@@ -620,116 +662,84 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  // ── WALLET FORM ──────────────────────────────────────────────────────────
+  // ── Wallet fields ─────────────────────────────────────────────────────────
 
-  Widget _buildWalletForm() {
+  Widget _walletFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildWalletHeader(),
-        const SizedBox(height: 20),
-        _label('Número de teléfono vinculado'),
+        _walletHeader(),
+        const SizedBox(height: 16),
+        _label('Número de teléfono'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: TextFormField(
-            controller: _walletPhoneCtrl,
-            keyboardType: TextInputType.phone,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(10),
-            ],
-            decoration: _dec('3001234567',
-                prefix: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEEF1FB),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text('+57',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: Color(0xFF5667F6))),
-                )),
-            validator: (v) {
-              if (v == null || v.length < 7) return 'Número inválido';
-              return null;
-            },
-          ),
-        ),
+        _box(TextFormField(
+          controller: _walletPhoneCtrl,
+          keyboardType: TextInputType.phone,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10)],
+          decoration: _dec('3001234567',
+              prefix: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                    color: kBg, borderRadius: BorderRadius.circular(6)),
+                child: Text('+57',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: kPrimary)),
+              )),
+          validator: (v) => (v ?? '').length < 7 ? 'Número inválido' : null,
+        )),
         const SizedBox(height: 14),
-        _label('PIN de Wallet (4 dígitos)'),
+        _label('PIN (4 dígitos)'),
         const SizedBox(height: 8),
-        _inputBox(
-          child: TextFormField(
-            controller: _walletPinCtrl,
-            keyboardType: TextInputType.number,
-            obscureText: !_walletShowPin,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(4),
-            ],
-            decoration: _dec('• • • •',
-                prefix: const Icon(Icons.pin_outlined,
-                    color: Color(0xFF10B981), size: 20),
-                suffix: IconButton(
-                  icon: Icon(
-                    _walletShowPin ? Icons.visibility_off : Icons.visibility,
-                    size: 18,
-                    color: const Color(0xFF8A8FAE),
-                  ),
-                  onPressed: () =>
-                      setState(() => _walletShowPin = !_walletShowPin),
-                )),
-            validator: (v) {
-              if (v == null || v.length < 4) return 'PIN de 4 dígitos';
-              return null;
-            },
-          ),
-        ),
-        const SizedBox(height: 14),
-        _buildInfoChip(
-          icon: Icons.account_balance_wallet_outlined,
-          text: 'El saldo disponible se descontará automáticamente',
-          color: const Color(0xFF10B981),
-        ),
+        _box(TextFormField(
+          controller: _walletPinCtrl,
+          keyboardType: TextInputType.number,
+          obscureText: !_walletShowPin,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(4)],
+          decoration: _dec('• • • •',
+              prefix: const Icon(Icons.pin_outlined,
+                  color: Color(0xFF10B981), size: 18),
+              suffix: IconButton(
+                icon: Icon(_walletShowPin ? Icons.visibility_off : Icons.visibility,
+                    size: 18, color: kSubtext),
+                onPressed: () => setState(() => _walletShowPin = !_walletShowPin),
+              )),
+          validator: (v) => (v ?? '').length < 4 ? 'PIN de 4 dígitos' : null,
+        )),
       ],
     );
   }
 
-  Widget _buildWalletHeader() {
+  Widget _walletHeader() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF10B981), Color(0xFF059669)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
+            colors: [Color(0xFF10B981), Color(0xFF059669)]),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(10)),
-            child: const Center(
-                child: Text('👛', style: TextStyle(fontSize: 24))),
+                color: Colors.white, borderRadius: BorderRadius.circular(9)),
+            child: const Center(child: Text('👛', style: TextStyle(fontSize: 20))),
           ),
-          const SizedBox(width: 14),
-          Column(
+          const SizedBox(width: 12),
+          const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text('Wallet',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18)),
+                      color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
               Text('Monedero digital',
-                  style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  style: TextStyle(color: Colors.white70, fontSize: 11)),
             ],
           ),
         ],
@@ -737,43 +747,20 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  // ── SHARED WIDGETS ────────────────────────────────────────────────────────
+  // ── Shared helpers ────────────────────────────────────────────────────────
 
-  Widget _buildInfoChip({required IconData icon, required String text, required Color color}) {
+  Widget _saveToggle() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text,
-                style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSaveToggle() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04),
-              blurRadius: 8, offset: const Offset(0, 2))
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+            blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Row(
         children: [
-          const Icon(Icons.save_outlined, size: 18, color: Color(0xFF8A8FAE)),
+          Icon(Icons.save_outlined, size: 18, color: kSubtext),
           const SizedBox(width: 10),
           Expanded(
             child: Text('Guardar para futuros pagos',
@@ -789,7 +776,7 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _buildProceedButton() {
+  Widget _proceedBtn() {
     return GestureDetector(
       onTap: _proceed,
       child: Container(
@@ -797,16 +784,13 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF5667F6), Color(0xFF7B89F9)],
-          ),
+              colors: [Color(0xFF5667F6), Color(0xFF7B89F9)]),
           borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(color: kPrimary.withOpacity(0.4),
-                blurRadius: 20, offset: const Offset(0, 8))
-          ],
+          boxShadow: [BoxShadow(color: kPrimary.withOpacity(0.4),
+              blurRadius: 20, offset: const Offset(0, 8))],
         ),
         child: const Center(
-          child: Text('Continuar para confirmar',
+          child: Text('Continuar',
               style: TextStyle(
                   color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
         ),
@@ -814,21 +798,17 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
     );
   }
 
-  Widget _label(String text) {
-    return Text(text,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kText));
-  }
+  Widget _label(String text) => Text(text,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kText));
 
-  Widget _inputBox({required Widget child}) {
+  Widget _box(Widget child) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04),
-              blurRadius: 8, offset: const Offset(0, 2))
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+            blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: child,
     );
@@ -851,45 +831,80 @@ class _PaymentDataScreenState extends State<PaymentDataScreen>
 
   Widget _mastercardLogo() {
     return SizedBox(
-      width: 38,
-      height: 24,
-      child: Stack(
+      width: 36,
+      height: 22,
+      child: Stack(children: [
+        Positioned(
+            left: 0,
+            child: Container(
+                width: 22,
+                height: 22,
+                decoration: const BoxDecoration(
+                    color: Color(0xFFEB001B), shape: BoxShape.circle))),
+        Positioned(
+            right: 0,
+            child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFF79E1B).withOpacity(0.9),
+                    shape: BoxShape.circle))),
+      ]),
+    );
+  }
+
+  Widget _infoChip({required IconData icon, required String text, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
         children: [
-          Positioned(
-              left: 0,
-              child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                      color: Color(0xFFEB001B), shape: BoxShape.circle))),
-          Positioned(
-              right: 0,
-              child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFF79E1B).withOpacity(0.9),
-                      shape: BoxShape.circle))),
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 11, color: color, fontWeight: FontWeight.w500)),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _backBtn(VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
+              blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: const Icon(Icons.arrow_back_ios_new, size: 16),
       ),
     );
   }
 }
 
-class _CardNumberFormatter extends TextInputFormatter {
+class _CardFmt extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    final text = newValue.text.replaceAll(' ', '');
-    final buffer = StringBuffer();
+      TextEditingValue old, TextEditingValue val) {
+    final text = val.text.replaceAll(' ', '');
+    final buf = StringBuffer();
     for (int i = 0; i < text.length; i++) {
-      if (i > 0 && i % 4 == 0) buffer.write(' ');
-      buffer.write(text[i]);
+      if (i > 0 && i % 4 == 0) buf.write(' ');
+      buf.write(text[i]);
     }
-    final string = buffer.toString();
+    final s = buf.toString();
     return TextEditingValue(
-      text: string,
-      selection: TextSelection.collapsed(offset: string.length),
-    );
+        text: s, selection: TextSelection.collapsed(offset: s.length));
   }
 }
